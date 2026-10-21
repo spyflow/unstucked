@@ -6,7 +6,7 @@ An easy way to connect to "eduroam".
 Run:
 
 ```bash
-python3 /home/runner/work/unstucked/unstucked/eduroam.py
+python3 eduroam.py
 ```
 
 The script supports:
