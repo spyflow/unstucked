@@ -1,18 +1,17 @@
 import os
+import sys
 import platform
 import subprocess
-import sys
 import tempfile
 from getpass import getpass
 from xml.sax.saxutils import escape
 
 
 def add_eduroam_linux(username: str, password: str):
+    # Detectar interfaz Wi-Fi activa o usar comodín
     res = subprocess.run(
         ["nmcli", "-t", "-f", "DEVICE,TYPE", "device"],
-        capture_output=True,
-        text=True,
-        check=True,
+        capture_output=True, text=True, check=True
     )
     wifi_iface = "*"
     for line in res.stdout.splitlines():
@@ -20,41 +19,33 @@ def add_eduroam_linux(username: str, password: str):
             wifi_iface = line.split(":")[0]
             break
 
+    # Eliminar perfil previo si existe
     subprocess.run(
         ["nmcli", "connection", "delete", "eduroam"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
 
+    # Crear perfil ignorando certificado y permitiendo TLS heredado (phase1-auth-flags 32)
     cmd = [
-        "nmcli",
-        "connection",
-        "add",
-        "type",
-        "wifi",
-        "con-name",
-        "eduroam",
-        "ifname",
-        wifi_iface,
-        "ssid",
-        "eduroam",
-        "wifi-sec.key-mgmt",
-        "wpa-eap",
-        "802-1x.eap",
-        "peap",
-        "802-1x.phase2-auth",
-        "mschapv2",
-        "802-1x.identity",
-        username,
-        "802-1x.password",
-        password,
-        "802-1x.password-flags",
-        "0",
-        "802-1x.system-ca-certs",
-        "no",
+        "nmcli", "connection", "add",
+        "type", "wifi",
+        "con-name", "eduroam",
+        "ifname", wifi_iface,
+        "ssid", "eduroam",
+        "wifi-sec.key-mgmt", "wpa-eap",
+        "802-1x.eap", "peap",
+        "802-1x.phase2-auth", "mschapv2",
+        "802-1x.identity", username,
+        "802-1x.password", password,
+        "802-1x.password-flags", "0",
+        "802-1x.system-ca-certs", "no",
+        "802-1x.phase1-auth-flags", "32"
     ]
     subprocess.run(cmd, check=True)
-    print("Perfil 'eduroam' agregado correctamente en Linux.")
+    
+    # Intentar levantar la conexión automáticamente
+    subprocess.run(["nmcli", "connection", "up", "eduroam"])
+    print("Perfil 'eduroam' agregado y conectado correctamente en Linux.")
 
 
 def add_eduroam_windows(username: str, password: str):
@@ -79,7 +70,7 @@ def add_eduroam_windows(username: str, password: str):
                 <useOneX>true</useOneX>
             </authEncryption>
             <OneX xmlns="http://www.microsoft.com/networking/OneX/v1">
-                <EapConfig>
+                <EAPConfig>
                     <EapHostConfig xmlns="http://www.microsoft.com/provisioning/EapHostConfig">
                         <EapMethod>
                             <Type xmlns="http://www.microsoft.com/provisioning/EapCommon">25</Type>
@@ -143,6 +134,7 @@ def add_eduroam_windows(username: str, password: str):
     </Credentials>
 </EapHostUserCredentials>"""
 
+    # 1. Importar perfil de red con netsh
     with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-8") as tmp:
         tmp.write(profile_xml)
         tmp_path = tmp.name
@@ -152,6 +144,7 @@ def add_eduroam_windows(username: str, password: str):
     finally:
         os.remove(tmp_path)
 
+    # 2. Guardar credenciales de usuario en el perfil mediante wlanapi.dll
     wlanapi = ctypes.WinDLL("wlanapi.dll")
 
     class GUID(ctypes.Structure):
@@ -197,7 +190,7 @@ def add_eduroam_windows(username: str, password: str):
             ctypes.c_wchar_p("eduroam"),
             0,
             ctypes.c_wchar_p(user_xml),
-            None,
+            None
         )
         if res != 0:
             raise RuntimeError(f"Error al guardar las credenciales EAP (Código: {res}).")
